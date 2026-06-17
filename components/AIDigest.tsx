@@ -1,0 +1,243 @@
+"use client";
+
+import { useCallback, useEffect, useState } from "react";
+import type { RiskReport, Severity } from "@/lib/validation";
+import { dateFull } from "@/lib/format";
+
+type Async<T> =
+  | { status: "idle" }
+  | { status: "loading" }
+  | { status: "error"; message: string; needsKey?: boolean }
+  | { status: "ready"; data: T };
+
+type SummaryData = { summary: string; model: string; generatedAt: string };
+type RiskData = RiskReport & { model: string; generatedAt: string };
+
+async function fetchJson<T>(url: string): Promise<T> {
+  const res = await fetch(url, { cache: "no-store" });
+  const body = await res.json();
+  if (!res.ok) {
+    const err = new Error(body?.error ?? "Request failed") as Error & {
+      status?: number;
+    };
+    err.status = res.status;
+    throw err;
+  }
+  return body as T;
+}
+
+const SEVERITY_STYLES: Record<Severity, string> = {
+  high: "bg-danger/15 text-danger border-danger/30",
+  medium: "bg-warn/15 text-warn border-warn/30",
+  low: "bg-accent/15 text-accent border-accent/30",
+};
+
+function Spinner() {
+  return (
+    <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-muted border-t-transparent" />
+  );
+}
+
+export function AIDigest() {
+  const [summary, setSummary] = useState<Async<SummaryData>>({ status: "idle" });
+  const [risk, setRisk] = useState<Async<RiskData>>({ status: "idle" });
+
+  const loadSummary = useCallback(async () => {
+    setSummary({ status: "loading" });
+    try {
+      const data = await fetchJson<SummaryData>("/api/ai/summary");
+      setSummary({ status: "ready", data });
+    } catch (err) {
+      const e = err as Error & { status?: number };
+      setSummary({
+        status: "error",
+        message: e.message,
+        needsKey: e.status === 400,
+      });
+    }
+  }, []);
+
+  const loadRisk = useCallback(async () => {
+    setRisk({ status: "loading" });
+    try {
+      const data = await fetchJson<RiskData>("/api/ai/risk");
+      setRisk({ status: "ready", data });
+    } catch (err) {
+      const e = err as Error & { status?: number };
+      setRisk({
+        status: "error",
+        message: e.message,
+        needsKey: e.status === 400,
+      });
+    }
+  }, []);
+
+  useEffect(() => {
+    // Intentional fetch-on-mount: generate the digest as soon as the page loads.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    loadSummary();
+    loadRisk();
+  }, [loadSummary, loadRisk]);
+
+  const busy = summary.status === "loading" || risk.status === "loading";
+
+  return (
+    <section className="rounded-xl border border-accent/30 bg-gradient-to-b from-accent/[0.07] to-transparent">
+      <div className="flex items-center justify-between gap-3 px-5 pt-4 pb-3">
+        <div>
+          <h2 className="flex items-center gap-2 text-sm font-semibold text-foreground">
+            <span className="text-accent">✦</span> AI insights
+          </h2>
+          <p className="mt-0.5 text-xs text-muted">
+            Claude-generated daily digest and risk flags, live from current
+            metrics
+          </p>
+        </div>
+        <button
+          onClick={() => {
+            loadSummary();
+            loadRisk();
+          }}
+          disabled={busy}
+          className="flex items-center gap-1.5 rounded-md border border-border bg-surface px-3 py-1.5 text-xs font-medium text-muted hover:text-foreground disabled:opacity-50"
+        >
+          {busy ? <Spinner /> : null}
+          {busy ? "Generating…" : "Regenerate"}
+        </button>
+      </div>
+
+      <div className="grid gap-px bg-border/60 md:grid-cols-2">
+        {/* Daily summary */}
+        <div className="bg-background/40 p-5">
+          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">
+            Daily summary
+          </h3>
+          {summary.status === "loading" || summary.status === "idle" ? (
+            <SkeletonLines />
+          ) : summary.status === "error" ? (
+            <ErrorNote message={summary.message} needsKey={summary.needsKey} />
+          ) : (
+            <div className="whitespace-pre-wrap text-sm leading-relaxed text-foreground/90">
+              {summary.data.summary}
+            </div>
+          )}
+        </div>
+
+        {/* Risk flags */}
+        <div className="bg-background/40 p-5">
+          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">
+            Risk flags
+          </h3>
+          {risk.status === "loading" || risk.status === "idle" ? (
+            <SkeletonLines />
+          ) : risk.status === "error" ? (
+            <ErrorNote message={risk.message} needsKey={risk.needsKey} />
+          ) : (
+            <RiskFlags data={risk.data} />
+          )}
+        </div>
+      </div>
+
+      {(summary.status === "ready" || risk.status === "ready") && (
+        <p className="px-5 pb-3 pt-1 text-[11px] text-muted">
+          Generated by{" "}
+          {summary.status === "ready"
+            ? summary.data.model
+            : risk.status === "ready"
+              ? risk.data.model
+              : ""}{" "}
+          ·{" "}
+          {summary.status === "ready"
+            ? dateFull(summary.data.generatedAt)
+            : risk.status === "ready"
+              ? dateFull(risk.data.generatedAt)
+              : ""}
+        </p>
+      )}
+    </section>
+  );
+}
+
+function RiskFlags({ data }: { data: RiskData }) {
+  return (
+    <div>
+      <p className="mb-3 text-sm leading-relaxed text-foreground/90">
+        {data.overallAssessment}
+      </p>
+      {data.flags.length === 0 ? (
+        <p className="text-sm text-ok">No projects flagged at risk.</p>
+      ) : (
+        <ul className="space-y-2.5">
+          {data.flags.map((f) => (
+            <li
+              key={f.projectId}
+              className="rounded-lg border border-border bg-surface p-3"
+            >
+              <div className="mb-1.5 flex items-center justify-between gap-2">
+                <span className="text-sm font-medium text-foreground">
+                  {f.projectName}
+                </span>
+                <span
+                  className={`rounded-full border px-2 py-0.5 text-[11px] font-medium uppercase ${SEVERITY_STYLES[f.severity]}`}
+                >
+                  {f.severity}
+                </span>
+              </div>
+              <ul className="mb-2 space-y-0.5">
+                {f.reasons.map((r, i) => (
+                  <li key={i} className="flex gap-1.5 text-xs text-muted">
+                    <span>•</span>
+                    <span>{r}</span>
+                  </li>
+                ))}
+              </ul>
+              <p className="text-xs text-foreground/80">
+                <span className="font-medium text-accent">→ </span>
+                {f.recommendation}
+              </p>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function SkeletonLines() {
+  return (
+    <div className="space-y-2">
+      {[90, 75, 85, 60].map((w, i) => (
+        <div
+          key={i}
+          className="h-3 animate-pulse rounded bg-surface-2"
+          style={{ width: `${w}%` }}
+        />
+      ))}
+    </div>
+  );
+}
+
+function ErrorNote({
+  message,
+  needsKey,
+}: {
+  message: string;
+  needsKey?: boolean;
+}) {
+  return (
+    <div className="rounded-lg border border-warn/30 bg-warn/10 p-3 text-xs text-foreground/90">
+      {needsKey ? (
+        <>
+          <p className="font-medium">AI features need an API key.</p>
+          <p className="mt-1 text-muted">
+            Add <code className="text-foreground">ANTHROPIC_API_KEY</code> to{" "}
+            <code className="text-foreground">.env</code> and restart the dev
+            server.
+          </p>
+        </>
+      ) : (
+        message
+      )}
+    </div>
+  );
+}

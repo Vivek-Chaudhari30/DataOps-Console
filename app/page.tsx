@@ -4,6 +4,7 @@ import { Card, StatCard } from "@/components/ui";
 import { ThroughputChart } from "@/components/ThroughputChart";
 import { ProjectsTable } from "@/components/ProjectsTable";
 import { AnnotatorTable } from "@/components/AnnotatorTable";
+import { AIDigest } from "@/components/AIDigest";
 
 export const dynamic = "force-dynamic";
 
@@ -56,6 +57,8 @@ export default async function OverviewPage() {
           tone={summary.atRiskCount > 0 ? "danger" : "ok"}
         />
       </div>
+
+      <AIDigest />
 
       <Card
         title="Throughput"
