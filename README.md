@@ -6,6 +6,8 @@ annotator performance and timeline burndown across several concurrent projects,
 and uses an LLM to turn the live metrics into a daily status digest and to flag
 projects trending at-risk.
 
+**Live demo:** https://dataops-console-drab.vercel.app
+
 ![Operations overview](results/screenshots/overview.png)
 
 ## What it simulates
@@ -132,6 +134,19 @@ ANTHROPIC_API_KEY="sk-ant-..." # uses claude-sonnet-4-6 by default
 
 ## Deployment
 
-Deploys to **Vercel** with a hosted **Neon** Postgres. Set `DATABASE_URL` and an
-AI provider key in the Vercel project's environment, then run the Prisma
-migration and seed against the Neon database. _(Live URL added after deploy.)_
+Deployed on **Vercel** with a hosted **Neon** Postgres
+([live demo](https://dataops-console-drab.vercel.app)).
+
+The Neon database is provisioned via the Vercel Marketplace integration, which
+injects `DATABASE_URL` into the project. The build runs `prisma generate &&
+next build` (the generated client is gitignored), and `OPENAI_API_KEY` /
+`OPENAI_MODEL` are set as encrypted project env vars. To reproduce:
+
+```bash
+vercel link
+# add Neon from the project's Storage tab (sets DATABASE_URL), then:
+vercel env pull .env.production.local --environment=production
+DATABASE_URL="<neon-direct-url>" pnpm prisma migrate deploy
+DATABASE_URL="<neon-direct-url>" pnpm db:seed
+vercel deploy --prod
+```
