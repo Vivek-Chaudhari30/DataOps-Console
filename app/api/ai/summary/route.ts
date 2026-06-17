@@ -1,11 +1,6 @@
 import { NextResponse } from "next/server";
 import { getGlobalMetrics } from "@/lib/metrics";
-import {
-  ANTHROPIC_MODEL,
-  buildMetricsContext,
-  getAnthropic,
-  MissingApiKeyError,
-} from "@/lib/anthropic";
+import { buildMetricsContext, generateSummary, MissingApiKeyError } from "@/lib/ai";
 
 export const dynamic = "force-dynamic";
 
@@ -27,35 +22,17 @@ export async function GET() {
   try {
     const global = await getGlobalMetrics();
     const context = buildMetricsContext(global);
-    const client = getAnthropic();
 
-    const message = await client.messages.create({
-      model: ANTHROPIC_MODEL,
-      max_tokens: 1024,
-      system: SYSTEM_PROMPT,
-      messages: [
-        {
-          role: "user",
-          content: `Here are today's metrics as JSON:\n\n${JSON.stringify(
-            context,
-            null,
-            2
-          )}\n\nWrite the daily digest.`,
-        },
-      ],
-    });
+    const { text, model } = await generateSummary(
+      SYSTEM_PROMPT,
+      `Here are today's metrics as JSON:\n\n${JSON.stringify(
+        context,
+        null,
+        2
+      )}\n\nWrite the daily digest.`
+    );
 
-    const summary = message.content
-      .filter((b) => b.type === "text")
-      .map((b) => (b.type === "text" ? b.text : ""))
-      .join("\n")
-      .trim();
-
-    return NextResponse.json({
-      summary,
-      model: ANTHROPIC_MODEL,
-      generatedAt: context.asOf,
-    });
+    return NextResponse.json({ summary: text, model, generatedAt: context.asOf });
   } catch (err) {
     if (err instanceof MissingApiKeyError) {
       return NextResponse.json({ error: err.message }, { status: 400 });
