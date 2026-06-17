@@ -1,0 +1,90 @@
+// DataOps Console — data model for monitoring dataset-generation projects.
+// Docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client"
+  output   = "../lib/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+/// A dataset-generation project run for an AI lab (e.g. "Code RLHF v2").
+model Project {
+  id              String        @id @default(cuid())
+  name            String
+  description     String?
+  /// Task domain, e.g. "Code RLHF", "Math reasoning", "Tool-use traces".
+  domain          String
+  /// Total number of items the project is contracted to deliver.
+  targetItemCount Int
+  startDate       DateTime
+  deadline        DateTime
+  status          ProjectStatus @default(ACTIVE)
+  createdAt       DateTime      @default(now())
+
+  items      Item[]
+  milestones Milestone[]
+}
+
+/// A person producing dataset items. Profiles vary in speed and quality.
+model Annotator {
+  id          String   @id @default(cuid())
+  name        String
+  email       String?  @unique
+  /// Free-text speciality, e.g. "Python", "Competition math".
+  speciality  String?
+  createdAt   DateTime @default(now())
+
+  items Item[]
+}
+
+/// A single produced dataset item. Quality is scored during review.
+model Item {
+  id           String     @id @default(cuid())
+  projectId    String
+  annotatorId  String
+  status       ItemStatus @default(PENDING)
+  /// Reviewer quality score in [0,1]; null until reviewed.
+  qualityScore Float?
+  /// When the annotator produced the item.
+  createdAt    DateTime   @default(now())
+  /// When a reviewer completed QA on the item.
+  reviewedAt   DateTime?
+
+  project   Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  annotator Annotator @relation(fields: [annotatorId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@index([annotatorId])
+  @@index([createdAt])
+  @@index([projectId, createdAt])
+}
+
+/// A target checkpoint for a project, used for burndown-vs-target lines.
+model Milestone {
+  id              String   @id @default(cuid())
+  projectId       String
+  name            String
+  targetDate      DateTime
+  targetItemCount Int
+  createdAt       DateTime @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+}
+
+enum ProjectStatus {
+  ACTIVE
+  COMPLETED
+  PAUSED
+}
+
+enum ItemStatus {
+  PENDING
+  IN_REVIEW
+  APPROVED
+  REJECTED
+}

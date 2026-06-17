@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: dataops-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: dataops
+      POSTGRES_PASSWORD: dataops
+      POSTGRES_DB: dataops
+    ports:
+      - "5432:5432"
+    volumes:
+      - dataops_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dataops -d dataops"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  dataops_pgdata:
